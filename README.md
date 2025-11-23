@@ -114,7 +114,6 @@ Complete system lockdown with maximum restrictions.
 * Terminals destroyed
 * System binaries sabotaged
 * Authentication broken
-* Display backlight disabled
 * Web services protected and running
 
 **Result:** System totally locked, only web accessible from outside.
@@ -127,7 +126,7 @@ System lockdown while maintaining backdoor access.
 
 **What happens:**
 * Security monitoring neutralized
-* Admin access blocked (for legitimate users)
+* Admin access blocked 
 * Logs encrypted/deleted
 * Web services protected
 * Backdoor shells established
