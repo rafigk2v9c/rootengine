@@ -29,7 +29,7 @@ Enter your choice (1 or 2): _
 **THIS TOOL IS FOR EDUCATIONAL AND AUTHORIZED SECURITY TESTING ONLY.**
 
 * Use ONLY in controlled test environments, VMs, or authorized systems
-* Authors are NOT responsible for any damage, data loss, or legal consequences
+* Author are NOT responsible for any damage, data loss, or legal consequences
 * Unauthorized use may be ILLEGAL in your jurisdiction
 * You accept FULL RESPONSIBILITY for your actions
 
