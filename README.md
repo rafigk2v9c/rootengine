@@ -2,8 +2,6 @@
 
 Advanced Linux system lockdown tool with security monitoring neutralization capabilities.
 
-**Author:** @rafok2v9c
-
 ---
 
 ## Example Session
