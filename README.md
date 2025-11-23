@@ -88,8 +88,6 @@ chmod +x rootengine.sh
 
 ---
 
-## Usage
-
 ### Basic Usage
 
 ```bash
