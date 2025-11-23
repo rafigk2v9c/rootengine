@@ -2,6 +2,8 @@
 
 Advanced Linux system lockdown tool with security monitoring neutralization capabilities.
 
+**Author:** @rafok2v9c
+
 ---
 
 ## Example Session
@@ -46,7 +48,9 @@ Enter your choice (1 or 2): _
 * **Authorized Use Only** - Use ONLY on systems you own or have written authorization
 * **No Warranty** - Software provided "AS IS" with no liability for damages
 * **Full Responsibility** - By using this tool, you accept ALL consequences
+
 ---
+
 ## Overview
 
 ROOTENGINE neutralizes security monitoring solutions while maintaining web service availability. Advanced system lockdown with dual operating modes.
@@ -114,6 +118,7 @@ Complete system lockdown with maximum restrictions.
 * Terminals destroyed
 * System binaries sabotaged
 * Authentication broken
+* Display backlight disabled
 * Web services protected and running
 
 **Result:** System totally locked, only web accessible from outside.
@@ -126,7 +131,7 @@ System lockdown while maintaining backdoor access.
 
 **What happens:**
 * Security monitoring neutralized
-* Admin access blocked 
+* Admin access blocked (for legitimate users)
 * Logs encrypted/deleted
 * Web services protected
 * Backdoor shells established
@@ -143,102 +148,5 @@ System lockdown while maintaining backdoor access.
 **Configuration:**
 * Provide attacker IP address
 * Provide listening port
-
-**Listener setup:**
-```bash
-nc -lvnp PORT
-```
-
----
-
-## Technical Highlights
-
-### Web Server Protection
-
-**Guaranteed uptime for:**
-* Apache2, Nginx, Httpd, Lighttpd, PHP-FPM
-
-**Protection mechanisms:**
-* Real-time priority (nice -20, ionice RT, chrt FIFO 99)
-* OOM killer immunity (score -1000)
-* Watchdog monitoring (5-second checks)
-* Auto-restart on failure
-* Port monitoring (80/443)
-
-### Security Tool Neutralization
-
-**IDS/IPS:** Snort, Suricata, Zeek, Fail2ban, Tripwire, AIDE  
-**SIEM:** Splunk, Elastic Stack, QRadar, ArcSight, Graylog  
-**Monitoring:** Nagios, Zabbix, Prometheus, Grafana, Datadog
-
-### Log Management
-
-* AES-256-CBC encryption with random keys
-* Deletion fallback if no openssl
-* All system logs, audit, history cleared
-* Journal vacuumed
-
----
-
-## Detection & Mitigation
-
-### Can be Detected By:
-
-* Network traffic analysis (backdoor connections)
-* Out-of-band monitoring
-* Physical/console access
-* Hypervisor inspection (for VMs)
-* External SIEM/IDS
-
-### Defense Recommendations:
-
-* Regular system snapshots
-* Out-of-band monitoring
-* Network segmentation
-* Read-only system partitions
-* External log collection
-
----
-
-## Ethical Guidelines
-
-**DO:**
-* Test in isolated VMs only
-* Maintain backups/snapshots
-* Get written authorization
-* Document activities
-
-**DON'T:**
-* Use on production systems
-* Deploy without authorization
-* Use for malicious purposes
-* Violate laws
-
----
-
-## Contributing
-
-**Accepted:**
-* Bug fixes
-* Compatibility improvements
-* Documentation updates
-
-**NOT Accepted:**
-* Malicious feature additions
-* Safety mechanism removal
-* Warning/disclaimer removal
-
----
-
-**Restrictions:**
-* No illegal use
-* No production deployment without authorization
-* Must include all disclaimers
-
----
-
-## Support
-
-* Give us a star on GitHub
 
 **Use responsibly and legally.**
