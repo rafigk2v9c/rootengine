@@ -44,8 +44,6 @@ Enter your choice (1 or 2): _
 **CRITICAL LEGAL NOTICE:**
 
 * **Authorized Use Only** - Use ONLY on systems you own or have written authorization
-* **Criminal Offense** - Unauthorized use = violation of computer fraud laws
-* **Possible Penalties** - Heavy fines, prison sentences, civil liability
 * **No Warranty** - Software provided "AS IS" with no liability for damages
 * **Full Responsibility** - By using this tool, you accept ALL consequences
 ---
