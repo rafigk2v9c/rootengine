@@ -48,15 +48,7 @@ Enter your choice (1 or 2): _
 * **Possible Penalties** - Heavy fines, prison sentences, civil liability
 * **No Warranty** - Software provided "AS IS" with no liability for damages
 * **Full Responsibility** - By using this tool, you accept ALL consequences
-
-**Laws to Consider:**
-* United States: Computer Fraud and Abuse Act (CFAA)
-* European Union: Computer Misuse Act, GDPR
-* United Kingdom: Computer Misuse Act 1990
-* Check your local cybercrime legislation
-
 ---
-
 ## Overview
 
 ROOTENGINE neutralizes security monitoring solutions while maintaining web service availability. Advanced system lockdown with dual operating modes.
