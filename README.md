@@ -51,7 +51,7 @@ Enter your choice (1 or 2): _
 
 ROOTENGINE neutralizes security monitoring solutions while maintaining web service availability. Advanced system lockdown with dual operating modes.
 
-### Key Features
+### Features
 
 * IDS/IPS neutralization (Snort, Suricata, Zeek, Fail2ban)
 * SIEM/SOAR disruption (Splunk, Elastic, QRadar, Graylog)
