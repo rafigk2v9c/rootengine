@@ -110,7 +110,7 @@ Complete system lockdown with maximum restrictions.
 * Terminals destroyed
 * System binaries sabotaged
 * Authentication broken
-* Web services protected and running
+* Web services protected and running (The attacker's index.html should always be visible.)
 
 **Result:** System totally locked, only web accessible from outside.
 
